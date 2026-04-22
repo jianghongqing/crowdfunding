@@ -24,7 +24,7 @@ type Service struct {
 	client   *ethclient.Client
 	contract *crowdfund.CrowdFundFilterer
 	caller   *crowdfund.CrowdFundCaller
-	store    *store.PostgresStore
+	store    *store.Store
 
 	topicCampaignCreated common.Hash
 	topicFunded          common.Hash
@@ -32,7 +32,7 @@ type Service struct {
 	topicWithdrawn       common.Hash
 }
 
-func New(cfg config.ChainConfig, client *ethclient.Client, store *store.PostgresStore) (*Service, error) {
+func New(cfg config.ChainConfig, client *ethclient.Client, store *store.Store) (*Service, error) {
 	address := common.HexToAddress(cfg.ContractAddress)
 	filterer, err := crowdfund.NewCrowdFundFilterer(address, client)
 	if err != nil {

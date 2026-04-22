@@ -13,11 +13,11 @@ import (
 )
 
 type Handler struct {
-	store  *store.PostgresStore
+	store  *store.Store
 	reader *chain.CrowdFundReader
 }
 
-func NewHandler(store *store.PostgresStore, reader *chain.CrowdFundReader) *Handler {
+func NewHandler(store *store.Store, reader *chain.CrowdFundReader) *Handler {
 	return &Handler{store: store, reader: reader}
 }
 

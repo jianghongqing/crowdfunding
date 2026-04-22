@@ -3,7 +3,7 @@
 这个目录是众筹项目的链下后端，职责是：
 
 - 读取链上众筹合约状态
-- 同步合约事件到 Postgres
+- 同步合约事件到 MySQL
 - 提供查询 API 给前端
 
 它**不**替用户签名交易，交易仍由钱包发起。
@@ -19,8 +19,14 @@
 设置环境变量：
 
 - `CHAIN_CONFIG_PATH`（可选，默认 `config/chain.testnet.example.json`）
-- `DATABASE_URL`（必填）
+- `DATABASE_URL`（必填，MySQL DSN）
 - `API_ADDR`（可选，默认 `:8080`）
+
+MySQL DSN 示例：
+
+```bash
+export DATABASE_URL='root:password@tcp(127.0.0.1:3306)/crowdfunding?charset=utf8mb4'
+```
 
 ## 2) 生成合约 Go 绑定
 
@@ -47,7 +53,7 @@ export ABIGEN_BIN=/path/to/abigen
 
 ## 3) 数据库
 
-执行 `migrations/001_init.sql` 初始化表结构。
+在 MySQL 中执行 `migrations/001_init.sql` 初始化表结构。
 
 ## 4) 启动
 

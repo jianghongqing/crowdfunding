@@ -36,7 +36,7 @@ func main() {
 	}
 	defer client.Close()
 
-	st, err := store.NewPostgresStore(ctx, dbDSN)
+	st, err := store.NewMySQLStore(ctx, dbDSN)
 	if err != nil {
 		log.Fatalf("new store: %v", err)
 	}

@@ -21,15 +21,15 @@ flowchart LR
     Indexer[IndexerWorker]
     RpcNode[RpcNode]
     Contract[CrowdFundContract]
-    Postgres[Postgres]
+    MySQL[MySQL]
 
     Wallet -->|signTx| Frontend
     Frontend -->|sendRawTransaction| RpcNode
     RpcNode --> Contract
     Contract -->|events| RpcNode
     Indexer -->|FilterLogs| RpcNode
-    Indexer -->|upsert| Postgres
-    GoApi --> Postgres
+    Indexer -->|upsert| MySQL
+    GoApi --> MySQL
     GoApi -->|fallback eth_call| RpcNode
     Frontend -->|GET /campaigns| GoApi
 ```
@@ -124,6 +124,7 @@ npx serve frontend
 - 合约测试：`test/CrowdFund.t.sol`
 - 后端说明：`backend/README.md`
 - 前端说明：`frontend/README.md`
+- 从 0 启动指南：`docs/START_FROM_ZERO.md`
 
 ## 后续扩展建议
 

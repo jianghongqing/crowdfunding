@@ -1,57 +1,57 @@
 CREATE TABLE IF NOT EXISTS campaigns (
-    campaign_id BIGINT PRIMARY KEY,
-    creator TEXT NOT NULL,
-    title TEXT NOT NULL,
-    goal_wei TEXT NOT NULL,
-    pledged_wei TEXT NOT NULL,
-    deadline BIGINT NOT NULL,
+    campaign_id BIGINT UNSIGNED PRIMARY KEY,
+    creator VARCHAR(42) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    goal_wei VARCHAR(78) NOT NULL,
+    pledged_wei VARCHAR(78) NOT NULL,
+    deadline BIGINT UNSIGNED NOT NULL,
     withdrawn BOOLEAN NOT NULL DEFAULT FALSE,
-    created_block BIGINT NOT NULL DEFAULT 0,
-    created_tx_hash TEXT NOT NULL DEFAULT '',
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+    created_block BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    created_tx_hash VARCHAR(66) NOT NULL DEFAULT '',
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS contributions (
-    id BIGSERIAL PRIMARY KEY,
-    campaign_id BIGINT NOT NULL,
-    funder TEXT NOT NULL,
-    amount_wei TEXT NOT NULL,
-    tx_hash TEXT NOT NULL,
-    block_number BIGINT NOT NULL,
-    log_index BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (tx_hash, log_index)
-);
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    campaign_id BIGINT UNSIGNED NOT NULL,
+    funder VARCHAR(42) NOT NULL,
+    amount_wei VARCHAR(78) NOT NULL,
+    tx_hash VARCHAR(66) NOT NULL,
+    block_number BIGINT UNSIGNED NOT NULL,
+    log_index BIGINT UNSIGNED NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_contributions_tx_log (tx_hash, log_index)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS refunds (
-    id BIGSERIAL PRIMARY KEY,
-    campaign_id BIGINT NOT NULL,
-    funder TEXT NOT NULL,
-    amount_wei TEXT NOT NULL,
-    tx_hash TEXT NOT NULL,
-    block_number BIGINT NOT NULL,
-    log_index BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (tx_hash, log_index)
-);
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    campaign_id BIGINT UNSIGNED NOT NULL,
+    funder VARCHAR(42) NOT NULL,
+    amount_wei VARCHAR(78) NOT NULL,
+    tx_hash VARCHAR(66) NOT NULL,
+    block_number BIGINT UNSIGNED NOT NULL,
+    log_index BIGINT UNSIGNED NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_refunds_tx_log (tx_hash, log_index)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS withdrawals (
-    id BIGSERIAL PRIMARY KEY,
-    campaign_id BIGINT NOT NULL,
-    creator TEXT NOT NULL,
-    amount_wei TEXT NOT NULL,
-    tx_hash TEXT NOT NULL,
-    block_number BIGINT NOT NULL,
-    log_index BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (tx_hash, log_index)
-);
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    campaign_id BIGINT UNSIGNED NOT NULL,
+    creator VARCHAR(42) NOT NULL,
+    amount_wei VARCHAR(78) NOT NULL,
+    tx_hash VARCHAR(66) NOT NULL,
+    block_number BIGINT UNSIGNED NOT NULL,
+    log_index BIGINT UNSIGNED NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_withdrawals_tx_log (tx_hash, log_index)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS indexer_checkpoints (
-    worker_name TEXT PRIMARY KEY,
-    last_scanned_block BIGINT NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+    worker_name VARCHAR(64) PRIMARY KEY,
+    last_scanned_block BIGINT UNSIGNED NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE INDEX IF NOT EXISTS idx_contributions_campaign_id ON contributions (campaign_id);
 CREATE INDEX IF NOT EXISTS idx_refunds_campaign_id ON refunds (campaign_id);
