@@ -1,9 +1,9 @@
 {
-  "chainName": "sepolia",
-  "chainId": 11155111,
-  "rpcHttpUrl": "https://sepolia.infura.io/v3/your-api-key",
-  "rpcWsUrl": "wss://sepolia.infura.io/ws/v3/your-api-key",
-  "contractAddress": "0x0000000000000000000000000000000000000000",
-  "deploymentStartBlock": 0,
-  "confirmations": 5
+  "chainName": "anvil",
+  "chainId": 31337,
+  "rpcHttpUrl": "http://127.0.0.1:8545",
+  "rpcWsUrl": "ws://127.0.0.1:8545",
+  "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "deploymentStartBlock": 1,
+  "confirmations": 1
 }

@@ -17,9 +17,16 @@
 </head>
 <body>
   <h1>CrowdFund 前端最小模板</h1>
-  <p class="muted">先连接钱包（会自动检查 Sepolia），再操作 create / fund / withdraw / refund。</p>
+  <p class="muted">选择网络后连接钱包（会切换/添加对应链），再操作 create / fund / withdraw / refund。本地请先启动 <code>anvil</code>。</p>
 
   <div class="card">
+    <div class="row">
+      <label class="muted" for="networkSelect">网络</label>
+      <select id="networkSelect" style="padding:8px; min-width:200px;">
+        <option value="sepolia">Sepolia 测试网</option>
+        <option value="anvil">本地 Anvil (127.0.0.1:8545)</option>
+      </select>
+    </div>
     <div class="row">
       <input id="contractAddress" placeholder="合约地址 0x..." />
       <button id="connectBtn">连接钱包</button>

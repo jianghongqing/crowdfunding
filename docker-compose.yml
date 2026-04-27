@@ -1,0 +1,66 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: crowdfunding-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-crowdfunding}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-crowdfunding}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_ROOT_PASSWORD:-crowdfunding}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        TARGET_CMD: ./cmd/api
+    container_name: crowdfunding-api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-root:${MYSQL_ROOT_PASSWORD:-crowdfunding}@tcp(mysql:3306)/${MYSQL_DATABASE:-crowdfunding}?charset=utf8mb4&parseTime=true}
+      CHAIN_CONFIG_PATH: /app/config/chain.json
+      API_ADDR: :8080
+      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-20}
+      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-10}
+      DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
+      DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
+    volumes:
+      - ./backend/config/chain.testnet.example.json:/app/config/chain.json:ro
+    ports:
+      - "${API_PORT:-8080}:8080"
+
+  indexer:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        TARGET_CMD: ./cmd/indexer
+    container_name: crowdfunding-indexer
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-root:${MYSQL_ROOT_PASSWORD:-crowdfunding}@tcp(mysql:3306)/${MYSQL_DATABASE:-crowdfunding}?charset=utf8mb4&parseTime=true}
+      CHAIN_CONFIG_PATH: /app/config/chain.json
+      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-20}
+      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-10}
+      DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
+      DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
+    volumes:
+      - ./backend/config/chain.testnet.example.json:/app/config/chain.json:ro
+
+volumes:
+  mysql_data:

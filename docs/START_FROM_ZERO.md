@@ -139,9 +139,9 @@ npx serve frontend
 
 打开页面后：
 
-1. 输入合约地址
-2. 点击连接钱包
-3. 钱包切到 Sepolia（前端默认按 Sepolia 处理）
+1. 在「网络」里选 **Sepolia** 或 **本地 Anvil**（本地需先 `anvil`，链 ID `31337`）
+2. 输入合约地址
+3. 点击连接钱包（会尝试切换/添加对应网络）
 4. 测试 `create / fund / withdraw / refund`
 
 ## 7. 一键检查清单
@@ -180,3 +180,10 @@ $env:GOARCH = "amd64"
 `user:pass@tcp(host:port)/dbname?charset=utf8mb4`
 
 必要时对特殊字符做转义或改用不含特殊字符的密码。
+
+### 4) `wsl --update` / `wsl --install` 报 `0x80072f7d`（安全频道）
+
+浏览器能开 GitHub，但 WSL 在线更新失败时：
+
+1. **以管理员**运行仓库内脚本：`scripts/fix-wsl.ps1`（从 GitHub 安装官方 `wsl.*.x64.msi`）。
+2. 若短期不需要 WSL：运行 `scripts/install-foundry-windows.ps1` 使用 **Windows 原生** `forge` / `anvil`。

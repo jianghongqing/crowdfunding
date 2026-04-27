@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"crowdfunding/backend/contracts/crowdfund"
+	"crowdfunding/backend/internal/chain"
 	"crowdfunding/backend/internal/config"
 	"crowdfunding/backend/internal/store"
 
@@ -18,6 +19,7 @@ import (
 )
 
 const workerName = "crowdfund-indexer"
+const blockBatchSize uint64 = 1000
 
 type Service struct {
 	cfg      config.ChainConfig
@@ -38,10 +40,12 @@ func New(cfg config.ChainConfig, client *ethclient.Client, store *store.Store) (
 	if err != nil {
 		return nil, fmt.Errorf("new filterer: %w", err)
 	}
+
 	caller, err := crowdfund.NewCrowdFundCaller(address, client)
 	if err != nil {
 		return nil, fmt.Errorf("new caller: %w", err)
 	}
+
 	return &Service{
 		cfg:                  cfg,
 		client:               client,
@@ -60,6 +64,7 @@ func (s *Service) Run(ctx context.Context) error {
 		if err := s.syncOnce(ctx); err != nil {
 			return err
 		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -76,6 +81,7 @@ func (s *Service) syncOnce(ctx context.Context) error {
 	if head <= s.cfg.Confirmations {
 		return nil
 	}
+
 	safeHead := head - s.cfg.Confirmations
 	from, err := s.store.GetCheckpoint(ctx, workerName, s.cfg.DeploymentStartBlock)
 	if err != nil {
@@ -85,24 +91,33 @@ func (s *Service) syncOnce(ctx context.Context) error {
 		return nil
 	}
 
-	query := ethereum.FilterQuery{
-		FromBlock: big.NewInt(0).SetUint64(from),
-		ToBlock:   big.NewInt(0).SetUint64(safeHead),
-		Addresses: []common.Address{common.HexToAddress(s.cfg.ContractAddress)},
-	}
+	for batchFrom := from; batchFrom <= safeHead; {
+		batchTo := min(batchFrom+blockBatchSize-1, safeHead)
+		query := ethereum.FilterQuery{
+			FromBlock: big.NewInt(0).SetUint64(batchFrom),
+			ToBlock:   big.NewInt(0).SetUint64(batchTo),
+			Addresses: []common.Address{common.HexToAddress(s.cfg.ContractAddress)},
+		}
 
-	logs, err := s.client.FilterLogs(ctx, query)
-	if err != nil {
-		return fmt.Errorf("filter logs: %w", err)
-	}
+		logs, err := s.client.FilterLogs(ctx, query)
+		if err != nil {
+			return fmt.Errorf("filter logs %d-%d: %w", batchFrom, batchTo, err)
+		}
 
-	for _, lg := range logs {
-		if err := s.handleLog(ctx, lg); err != nil {
+		for _, lg := range logs {
+			if err := s.handleLog(ctx, lg); err != nil {
+				return err
+			}
+		}
+
+		if err := s.store.UpsertCheckpoint(ctx, workerName, batchTo+1); err != nil {
 			return err
 		}
+
+		batchFrom = batchTo + 1
 	}
 
-	return s.store.UpsertCheckpoint(ctx, workerName, safeHead+1)
+	return nil
 }
 
 func (s *Service) handleLog(ctx context.Context, lg types.Log) error {
@@ -130,6 +145,7 @@ func (s *Service) handleLog(ctx context.Context, lg types.Log) error {
 			PledgedWei:   onchain.Pledged.String(),
 			Deadline:     onchain.Deadline.Uint64(),
 			Withdrawn:    onchain.Withdrawn,
+			Status:       chain.DeriveStatus(onchain.Pledged, onchain.Goal, onchain.Deadline, onchain.Withdrawn),
 			CreatedBlock: lg.BlockNumber,
 		}, lg.TxHash.Hex())
 	case s.topicFunded:
@@ -137,37 +153,50 @@ func (s *Service) handleLog(ctx context.Context, lg types.Log) error {
 		if err != nil {
 			return fmt.Errorf("parse Funded: %w", err)
 		}
+
 		if err := s.store.InsertContribution(
 			ctx, ev.CampaignId.Uint64(), ev.Funder.Hex(), ev.Amount.String(), lg.TxHash.Hex(), lg.BlockNumber, lg.Index,
 		); err != nil {
 			return err
 		}
+
 		return s.refreshCampaign(ctx, ev.CampaignId.Uint64())
 	case s.topicRefunded:
 		ev, err := s.contract.ParseRefunded(lg)
 		if err != nil {
 			return fmt.Errorf("parse Refunded: %w", err)
 		}
+
 		if err := s.store.InsertRefund(
 			ctx, ev.CampaignId.Uint64(), ev.Funder.Hex(), ev.Amount.String(), lg.TxHash.Hex(), lg.BlockNumber, lg.Index,
 		); err != nil {
 			return err
 		}
-		return nil
+
+		return s.refreshCampaign(ctx, ev.CampaignId.Uint64())
 	case s.topicWithdrawn:
 		ev, err := s.contract.ParseWithdrawn(lg)
 		if err != nil {
 			return fmt.Errorf("parse Withdrawn: %w", err)
 		}
+
 		if err := s.store.InsertWithdrawal(
 			ctx, ev.CampaignId.Uint64(), ev.Creator.Hex(), ev.Amount.String(), lg.TxHash.Hex(), lg.BlockNumber, lg.Index,
 		); err != nil {
 			return err
 		}
+
 		return s.refreshCampaign(ctx, ev.CampaignId.Uint64())
 	default:
 		return nil
 	}
+}
+
+func min(a, b uint64) uint64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (s *Service) refreshCampaign(ctx context.Context, campaignID uint64) error {
@@ -175,6 +204,7 @@ func (s *Service) refreshCampaign(ctx context.Context, campaignID uint64) error 
 	if err != nil {
 		return fmt.Errorf("refresh campaign from chain: %w", err)
 	}
+
 	return s.store.UpsertCampaign(ctx, store.CampaignRecord{
 		CampaignID:   raw.Id.Uint64(),
 		Creator:      raw.Creator.Hex(),
@@ -183,6 +213,7 @@ func (s *Service) refreshCampaign(ctx context.Context, campaignID uint64) error 
 		PledgedWei:   raw.Pledged.String(),
 		Deadline:     raw.Deadline.Uint64(),
 		Withdrawn:    raw.Withdrawn,
+		Status:       chain.DeriveStatus(raw.Pledged, raw.Goal, raw.Deadline, raw.Withdrawn),
 		CreatedBlock: 0,
 	}, "")
 }

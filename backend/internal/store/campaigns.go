@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -14,14 +16,15 @@ type CampaignRecord struct {
 	PledgedWei   string    `json:"pledgedWei"`
 	Deadline     uint64    `json:"deadline"`
 	Withdrawn    bool      `json:"withdrawn"`
+	Status       string    `json:"status"`
 	CreatedBlock uint64    `json:"createdBlock"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 func (s *Store) UpsertCampaign(ctx context.Context, c CampaignRecord, txHash string) error {
 	const q = `
-INSERT INTO campaigns (campaign_id, creator, title, goal_wei, pledged_wei, deadline, withdrawn, created_block, created_tx_hash)
-VALUES (?,?,?,?,?,?,?,?,?)
+INSERT INTO campaigns (campaign_id, creator, title, goal_wei, pledged_wei, deadline, withdrawn, status, created_block, created_tx_hash)
+VALUES (?,?,?,?,?,?,?,?,?,?)
 ON DUPLICATE KEY UPDATE
     creator = VALUES(creator),
     title = VALUES(title),
@@ -29,6 +32,7 @@ ON DUPLICATE KEY UPDATE
     pledged_wei = VALUES(pledged_wei),
     deadline = VALUES(deadline),
     withdrawn = VALUES(withdrawn),
+    status = VALUES(status),
     updated_at = CURRENT_TIMESTAMP`
 
 	_, err := s.db.ExecContext(
@@ -41,6 +45,7 @@ ON DUPLICATE KEY UPDATE
 		c.PledgedWei,
 		c.Deadline,
 		c.Withdrawn,
+		c.Status,
 		c.CreatedBlock,
 		txHash,
 	)
@@ -53,7 +58,7 @@ ON DUPLICATE KEY UPDATE
 
 func (s *Store) ListCampaigns(ctx context.Context, limit, offset int) ([]CampaignRecord, error) {
 	const q = `
-SELECT campaign_id, creator, title, goal_wei, pledged_wei, deadline, withdrawn, created_block, updated_at
+SELECT campaign_id, creator, title, goal_wei, pledged_wei, deadline, withdrawn, status, created_block, updated_at
 FROM campaigns
 ORDER BY campaign_id DESC
 LIMIT ? OFFSET ?`
@@ -75,6 +80,7 @@ LIMIT ? OFFSET ?`
 			&r.PledgedWei,
 			&r.Deadline,
 			&r.Withdrawn,
+			&r.Status,
 			&r.CreatedBlock,
 			&r.UpdatedAt,
 		); err != nil {
@@ -88,7 +94,7 @@ LIMIT ? OFFSET ?`
 
 func (s *Store) GetCampaign(ctx context.Context, campaignID uint64) (CampaignRecord, error) {
 	const q = `
-SELECT campaign_id, creator, title, goal_wei, pledged_wei, deadline, withdrawn, created_block, updated_at
+SELECT campaign_id, creator, title, goal_wei, pledged_wei, deadline, withdrawn, status, created_block, updated_at
 FROM campaigns
 WHERE campaign_id = ?`
 
@@ -101,10 +107,14 @@ WHERE campaign_id = ?`
 		&r.PledgedWei,
 		&r.Deadline,
 		&r.Withdrawn,
+		&r.Status,
 		&r.CreatedBlock,
 		&r.UpdatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return CampaignRecord{}, sql.ErrNoRows
+		}
 		return CampaignRecord{}, fmt.Errorf("get campaign: %w", err)
 	}
 

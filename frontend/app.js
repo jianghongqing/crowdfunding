@@ -4,14 +4,34 @@ const ABI = [
   "function withdraw(uint256 campaignId)",
   "function refund(uint256 campaignId)"
 ];
-const SEPOLIA_CHAIN_ID_HEX = "0xaa36a7";
-const SEPOLIA_CHAIN_ID_DEC = 11155111n;
+
+const NETWORKS = {
+  sepolia: {
+    label: "Sepolia 测试网",
+    chainIdHex: "0xaa36a7",
+    chainName: "Sepolia",
+    rpcUrls: ["https://rpc.sepolia.org"],
+    blockExplorerUrls: ["https://sepolia.etherscan.io"]
+  },
+  anvil: {
+    label: "本地 Anvil",
+    chainIdHex: "0x7a69",
+    chainName: "Anvil Local",
+    rpcUrls: ["http://127.0.0.1:8545"],
+    blockExplorerUrls: []
+  }
+};
 
 let provider;
 let signer;
 let contract;
 
 const $ = (id) => document.getElementById(id);
+
+function getNetwork() {
+  const key = $("networkSelect").value;
+  return NETWORKS[key] || NETWORKS.sepolia;
+}
 
 function log(msg) {
   const el = $("log");
@@ -25,46 +45,51 @@ function getAddress() {
   return address;
 }
 
+async function ensureNetwork() {
+  const net = getNetwork();
+  const chainId = await window.ethereum.request({ method: "eth_chainId" });
+  if (chainId.toLowerCase() === net.chainIdHex.toLowerCase()) return;
+
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: net.chainIdHex }]
+    });
+    log(`已切换到 ${net.chainName}`);
+  } catch (err) {
+    if (err && err.code === 4902) {
+      const params = {
+        chainId: net.chainIdHex,
+        chainName: net.chainName,
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: net.rpcUrls
+      };
+      if (net.blockExplorerUrls.length > 0) {
+        params.blockExplorerUrls = net.blockExplorerUrls;
+      }
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [params]
+      });
+      log(`已添加并切换到 ${net.chainName}`);
+    } else {
+      throw new Error(`请先手动切换钱包网络到 ${net.chainName}`);
+    }
+  }
+}
+
 async function connectWallet() {
   if (!window.ethereum) throw new Error("未检测到钱包，请先安装 MetaMask");
   await window.ethereum.request({ method: "eth_requestAccounts" });
-  await ensureSepoliaNetwork();
+  await ensureNetwork();
   provider = new ethers.BrowserProvider(window.ethereum);
   signer = await provider.getSigner();
   const address = getAddress();
   contract = new ethers.Contract(address, ABI, signer);
   const network = await provider.getNetwork();
-  $("walletInfo").textContent = `已连接: ${await signer.getAddress()} | chainId: ${network.chainId.toString()}`;
+  const net = getNetwork();
+  $("walletInfo").textContent = `已连接: ${await signer.getAddress()} | ${net.label} | chainId: ${network.chainId.toString()}`;
   log("钱包连接成功");
-}
-
-async function ensureSepoliaNetwork() {
-  const chainId = await window.ethereum.request({ method: "eth_chainId" });
-  if (chainId.toLowerCase() === SEPOLIA_CHAIN_ID_HEX) return;
-
-  try {
-    await window.ethereum.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }]
-    });
-    log("已切换到 Sepolia");
-  } catch (err) {
-    if (err && err.code === 4902) {
-      await window.ethereum.request({
-        method: "wallet_addEthereumChain",
-        params: [{
-          chainId: SEPOLIA_CHAIN_ID_HEX,
-          chainName: "Sepolia",
-          nativeCurrency: { name: "SepoliaETH", symbol: "ETH", decimals: 18 },
-          rpcUrls: ["https://rpc.sepolia.org"],
-          blockExplorerUrls: ["https://sepolia.etherscan.io"]
-        }]
-      });
-      log("已添加并切换到 Sepolia");
-    } else {
-      throw new Error("请先手动切换钱包网络到 Sepolia");
-    }
-  }
 }
 
 function ensureContract() {
@@ -137,12 +162,20 @@ bind("fundBtn", fundCampaign);
 bind("withdrawBtn", withdrawCampaign);
 bind("refundBtn", refundCampaign);
 
+$("networkSelect").addEventListener("change", () => {
+  contract = null;
+  const net = getNetwork();
+  log(`已选择网络: ${net.label}，请重新点击连接钱包`);
+  $("walletInfo").textContent = "网络已更改，请重新点击连接钱包";
+});
+
 if (window.ethereum) {
   window.ethereum.on("chainChanged", (chainId) => {
-    if (chainId.toLowerCase() !== SEPOLIA_CHAIN_ID_HEX) {
-      log("当前网络不是 Sepolia，交易可能失败");
+    const net = getNetwork();
+    if (chainId.toLowerCase() !== net.chainIdHex.toLowerCase()) {
+      log(`当前链与所选「${net.label}」不一致，交易可能失败`);
     } else {
-      log("当前网络: Sepolia");
+      log(`当前网络: ${net.chainName}`);
     }
     contract = null;
     $("walletInfo").textContent = "网络已切换，请重新点击连接钱包";

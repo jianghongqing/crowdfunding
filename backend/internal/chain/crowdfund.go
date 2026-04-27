@@ -41,7 +41,7 @@ func (r *CrowdFundReader) GetCampaign(ctx context.Context, campaignID uint64) (C
 		return CampaignView{}, fmt.Errorf("get campaign from chain: %w", err)
 	}
 
-	status := deriveStatus(raw.Pledged, raw.Goal, raw.Deadline, raw.Withdrawn)
+	status := DeriveStatus(raw.Pledged, raw.Goal, raw.Deadline, raw.Withdrawn)
 	return CampaignView{
 		ID:         raw.Id.Uint64(),
 		Creator:    raw.Creator.Hex(),
@@ -62,7 +62,7 @@ func (r *CrowdFundReader) GetContribution(ctx context.Context, campaignID uint64
 	return value.String(), nil
 }
 
-func deriveStatus(pledged, goal, deadline *big.Int, withdrawn bool) string {
+func DeriveStatus(pledged, goal, deadline *big.Int, withdrawn bool) string {
 	if withdrawn {
 		return "succeeded_withdrawn"
 	}
