@@ -1,0 +1,9 @@
+{
+  "chainName": "<production-network-name>",
+  "chainId": 1,
+  "rpcHttpUrl": "https://<production-rpc-provider>/<secret-or-managed-endpoint>",
+  "rpcWsUrl": "wss://<production-rpc-provider>/<secret-or-managed-endpoint>",
+  "contractAddress": "0x0000000000000000000000000000000000000000",
+  "deploymentStartBlock": 0,
+  "confirmations": 12
+}

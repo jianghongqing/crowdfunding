@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pwd)",
+      "Bash(ls)",
+      "Bash(git status --short)",
+      "Bash(git diff -- .)",
+      "Bash(rg --files)",
+      "Bash(rg *)"
+    ]
+  }
+}

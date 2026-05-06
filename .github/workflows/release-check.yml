@@ -1,0 +1,76 @@
+name: Release Check
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - master
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  release-readiness:
+    name: Release readiness
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Validate required docs exist
+        shell: bash
+        run: |
+          test -f README.md
+          test -f docs/PROJECT_INTRO.md
+          test -f docs/ARCHITECTURE.md
+          test -f docs/DEPLOYMENT.md
+          test -f security/permissions-matrix.md
+          test -f monitoring/README.md
+
+      - name: Validate backend config examples exist
+        shell: bash
+        run: |
+          test -f backend/config/README.md
+          test -f backend/config/examples/anvil.example.json
+          test -f backend/config/examples/sepolia.example.json
+
+      - name: Check for accidental local artifacts
+        shell: bash
+        run: |
+          if find . -type f \( -name "*.exe" -o -name "*.test" -o -regex '.*\.go\.[0-9]+' \) | grep -q .; then
+            echo "Local build artifacts or accidental backup files found."
+            find . -type f \( -name "*.exe" -o -name "*.test" -o -regex '.*\.go\.[0-9]+' \)
+            exit 1
+          fi
+
+      - name: Check for local Claude settings in git
+        shell: bash
+        run: |
+          if git ls-files --error-unmatch .claude/settings.local.json >/dev/null 2>&1; then
+            echo ".claude/settings.local.json must not be committed."
+            exit 1
+          fi
+
+      - name: Check for obvious placeholder secrets in env example
+        shell: bash
+        run: |
+          grep -q "CHAIN_CONFIG_HOST_PATH" .env.example
+          grep -q "DATABASE_URL" .env.example
+
+      - name: Check Docker compose uses configurable chain config path
+        shell: bash
+        run: |
+          grep -q "CHAIN_CONFIG_HOST_PATH" docker-compose.yml
+
+      - name: Check docs reference deployment and architecture
+        shell: bash
+        run: |
+          grep -q "ARCHITECTURE.md" README.md
+          grep -q "DEPLOYMENT.md" README.md

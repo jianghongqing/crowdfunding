@@ -11,7 +11,7 @@ env:
   FOUNDRY_PROFILE: ci
 
 jobs:
-  check:
+  foundry:
     name: Foundry project
     runs-on: ubuntu-latest
     permissions:
@@ -36,3 +36,33 @@ jobs:
 
       - name: Run Forge tests
         run: forge test -vvv
+
+  go-backend:
+    name: Go backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      GOCACHE: ${{ github.workspace }}/.gocache
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Build API, indexer and migrate
+        run: go build ./cmd/api ./cmd/indexer ./cmd/migrate
+
+      - name: Run Go tests
+        run: go test ./...

@@ -37,7 +37,7 @@ services:
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
     volumes:
-      - ./backend/config/chain.testnet.example.json:/app/config/chain.json:ro
+      - ${CHAIN_CONFIG_HOST_PATH:-./backend/config/chain.testnet.example.json}:/app/config/chain.json:ro
     ports:
       - "${API_PORT:-8080}:8080"
 
@@ -60,7 +60,7 @@ services:
       DB_CONN_MAX_LIFETIME: ${DB_CONN_MAX_LIFETIME:-30m}
       DB_CONN_MAX_IDLE_TIME: ${DB_CONN_MAX_IDLE_TIME:-5m}
     volumes:
-      - ./backend/config/chain.testnet.example.json:/app/config/chain.json:ro
+      - ${CHAIN_CONFIG_HOST_PATH:-./backend/config/chain.testnet.example.json}:/app/config/chain.json:ro
 
 volumes:
   mysql_data:

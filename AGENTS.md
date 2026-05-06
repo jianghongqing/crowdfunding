@@ -42,6 +42,7 @@ Deployment assets:
 
 - Prefer small, local changes over broad refactors.
 - Preserve the current architecture: contract, indexer, API, and static frontend remain separate concerns.
+- Use `CLAUDE.md` and `.claude/context.md` as secondary navigation/context files when you need quick repository orientation, but treat this `AGENTS.md` as the primary source of repository rules.
 - Do not rewrite frontend structure unless the task explicitly asks for frontend work.
 - Do not regenerate contract bindings unless contract ABI or bytecode actually changed.
 - When changing backend behavior, keep API and indexer compatibility in mind together.
