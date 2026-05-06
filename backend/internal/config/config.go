@@ -18,6 +18,22 @@ type ChainConfig struct {
 	Confirmations        uint64 `json:"confirmations"`
 }
 
+type PublicChainConfig struct {
+	ChainName            string `json:"chainName"`
+	ChainID              uint64 `json:"chainId"`
+	ContractAddress      string `json:"contractAddress"`
+	DeploymentStartBlock uint64 `json:"deploymentStartBlock"`
+}
+
+func (c ChainConfig) Public() PublicChainConfig {
+	return PublicChainConfig{
+		ChainName:            c.ChainName,
+		ChainID:              c.ChainID,
+		ContractAddress:      c.ContractAddress,
+		DeploymentStartBlock: c.DeploymentStartBlock,
+	}
+}
+
 func Load(path string) (ChainConfig, error) {
 	var cfg ChainConfig
 

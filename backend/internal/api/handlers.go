@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"crowdfunding/backend/internal/chain"
+	"crowdfunding/backend/internal/config"
 	"crowdfunding/backend/internal/store"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -20,10 +21,11 @@ import (
 type Handler struct {
 	store  *store.Store
 	reader *chain.CrowdFundReader
+	cfg    config.PublicChainConfig
 }
 
-func NewHandler(store *store.Store, reader *chain.CrowdFundReader) *Handler {
-	return &Handler{store: store, reader: reader}
+func NewHandler(store *store.Store, reader *chain.CrowdFundReader, cfg config.PublicChainConfig) *Handler {
+	return &Handler{store: store, reader: reader, cfg: cfg}
 }
 
 func (h *Handler) Routes() http.Handler {
@@ -33,11 +35,14 @@ func (h *Handler) Routes() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(15 * time.Second))
+	r.Use(corsMiddleware)
 	r.Use(jsonContentType)
+	r.Get("/config", h.getConfig)
 	r.Get("/healthz", h.health)
 	r.Get("/campaigns", h.listCampaigns)
 	r.Get("/campaigns/{id}", h.getCampaign)
 	r.Get("/campaigns/{id}/contributions/{address}", h.getContributionForAddress)
+	r.Get("/campaigns/{id}/contributions", h.listContributions)
 	return r
 }
 
@@ -121,6 +126,32 @@ func (h *Handler) getContributionForAddress(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+func (h *Handler) listContributions(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondErr(w, http.StatusBadRequest, "invalid campaign id")
+		return
+	}
+
+	limit, offset, err := parsePagination(r)
+	if err != nil {
+		respondErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	items, err := h.store.ListContributions(r.Context(), id, limit, offset)
+	if err != nil {
+		respondErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.cfg)
+}
+
 func respondJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -134,6 +165,19 @@ func respondErr(w http.ResponseWriter, code int, msg string) {
 func jsonContentType(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }

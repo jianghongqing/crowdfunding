@@ -52,7 +52,7 @@ func main() {
 		log.Fatalf("new crowd reader: %v", err)
 	}
 
-	h := api.NewHandler(st, reader)
+	h := api.NewHandler(st, reader, cfg.Public())
 	addr := envOrDefault("API_ADDR", ":8080")
 	log.Printf("api listening on %s", addr)
 

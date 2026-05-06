@@ -67,6 +67,49 @@ func (s *Store) GetCheckpoint(ctx context.Context, worker string, fallback uint6
 	return block, nil
 }
 
+type ContributionRecord struct {
+	ID          uint64 `json:"id"`
+	CampaignID  uint64 `json:"campaignId"`
+	Funder      string `json:"funder"`
+	AmountWei   string `json:"amountWei"`
+	TxHash      string `json:"txHash"`
+	BlockNumber uint64 `json:"blockNumber"`
+	LogIndex    uint64 `json:"logIndex"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+func (s *Store) ListContributions(ctx context.Context, campaignID uint64, limit, offset int) ([]ContributionRecord, error) {
+	const q = `
+SELECT id, campaign_id, funder, amount_wei, tx_hash, block_number, log_index, created_at
+FROM contributions
+WHERE campaign_id = ?
+ORDER BY id DESC
+LIMIT ? OFFSET ?`
+
+	rows, err := s.db.QueryContext(ctx, q, campaignID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list contributions query: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ContributionRecord
+	for rows.Next() {
+		var r ContributionRecord
+		var createdAt any
+		if err := rows.Scan(&r.ID, &r.CampaignID, &r.Funder, &r.AmountWei, &r.TxHash, &r.BlockNumber, &r.LogIndex, &createdAt); err != nil {
+			return nil, fmt.Errorf("scan contribution: %w", err)
+		}
+		if t, ok := createdAt.(string); ok {
+			r.CreatedAt = t
+		} else {
+			r.CreatedAt = fmt.Sprintf("%v", createdAt)
+		}
+		out = append(out, r)
+	}
+
+	return out, rows.Err()
+}
+
 func (s *Store) UpsertCheckpoint(ctx context.Context, worker string, block uint64) error {
 	const q = `
 INSERT INTO indexer_checkpoints (worker_name, last_scanned_block)
