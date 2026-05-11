@@ -61,6 +61,8 @@ flowchart LR
 - 负责读数据库
 - 在数据库未命中时回链上兜底
 - 不广播用户交易
+- 内置限流、安全头、结构化日志
+- 提供 `/api/v1/` 版本化路由和 `/api/v1/stats` 统计端点
 
 ### Indexer
 
@@ -82,6 +84,8 @@ flowchart TB
     MainAPI --> ChainReader[internal/chain]
     MainAPI --> Store[internal/store]
     MainAPI --> Config[internal/config]
+
+    APIHandlers --> Middleware[middleware: rate-limit, cors, slog, security-headers]
 
     MainIndexer[cmd/indexer/main.go] --> IndexerSync[internal/indexer]
     MainIndexer --> Store

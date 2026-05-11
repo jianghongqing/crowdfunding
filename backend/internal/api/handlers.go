@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -22,27 +24,44 @@ type Handler struct {
 	store  *store.Store
 	reader *chain.CrowdFundReader
 	cfg    config.PublicChainConfig
+	log    *slog.Logger
 }
 
-func NewHandler(store *store.Store, reader *chain.CrowdFundReader, cfg config.PublicChainConfig) *Handler {
-	return &Handler{store: store, reader: reader, cfg: cfg}
+func NewHandler(st *store.Store, reader *chain.CrowdFundReader, cfg config.PublicChainConfig) *Handler {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	return &Handler{store: st, reader: reader, cfg: cfg, log: logger}
 }
 
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
+
+	rl := newRateLimiter(30, 60)
+
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
+	r.Use(slogMiddleware(h.log))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(15 * time.Second))
+	r.Use(securityHeaders)
 	r.Use(corsMiddleware)
-	r.Use(jsonContentType)
-	r.Get("/config", h.getConfig)
+	r.Use(rateLimitMiddleware(rl))
+
 	r.Get("/healthz", h.health)
+	r.Get("/config", h.getConfig)
+
+	r.Route("/api/v1", func(api chi.Router) {
+		api.Get("/campaigns", h.listCampaigns)
+		api.Get("/campaigns/{id}", h.getCampaign)
+		api.Get("/campaigns/{id}/contributions/{address}", h.getContributionForAddress)
+		api.Get("/campaigns/{id}/contributions", h.listContributions)
+		api.Get("/stats", h.getStats)
+	})
+
 	r.Get("/campaigns", h.listCampaigns)
 	r.Get("/campaigns/{id}", h.getCampaign)
 	r.Get("/campaigns/{id}/contributions/{address}", h.getContributionForAddress)
 	r.Get("/campaigns/{id}/contributions", h.listContributions)
+
 	return r
 }
 
@@ -51,33 +70,54 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := h.store.Ping(ctx); err != nil {
-		respondErr(w, http.StatusServiceUnavailable, "database unavailable")
+		h.log.Error("health check failed", "error", err)
+		respondError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "database unavailable")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	respondJSON(w, http.StatusOK, map[string]any{
+		"status":    "ok",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"version":   "1.0.0",
+	})
+}
+
+func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
+	respondJSON(w, http.StatusOK, h.cfg)
+}
+
+func (h *Handler) getStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.store.GetStats(r.Context())
+	if err != nil {
+		h.log.Error("get stats failed", "error", err)
+		respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load statistics")
+		return
+	}
+	respondJSON(w, http.StatusOK, stats)
 }
 
 func (h *Handler) listCampaigns(w http.ResponseWriter, r *http.Request) {
 	limit, offset, err := parsePagination(r)
 	if err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
+		respondError(w, http.StatusBadRequest, "INVALID_PARAMS", err.Error())
 		return
 	}
 
-	items, err := h.store.ListCampaigns(r.Context(), limit, offset)
+	status := r.URL.Query().Get("status")
+	items, total, err := h.store.ListCampaignsWithCount(r.Context(), limit, offset, status)
 	if err != nil {
-		respondErr(w, http.StatusInternalServerError, err.Error())
+		h.log.Error("list campaigns failed", "error", err)
+		respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list campaigns")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, items)
+	respondPaginated(w, items, total, limit, offset)
 }
 
 func (h *Handler) getCampaign(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
-		respondErr(w, http.StatusBadRequest, "invalid campaign id")
+		respondError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid campaign id")
 		return
 	}
 
@@ -87,13 +127,14 @@ func (h *Handler) getCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		respondErr(w, http.StatusInternalServerError, err.Error())
+		h.log.Error("get campaign failed", "error", err, "campaignId", id)
+		respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get campaign")
 		return
 	}
 
 	view, chainErr := h.reader.GetCampaign(r.Context(), id)
 	if chainErr != nil {
-		respondErr(w, http.StatusNotFound, chainErr.Error())
+		respondError(w, http.StatusNotFound, "NOT_FOUND", "campaign not found")
 		return
 	}
 
@@ -103,19 +144,20 @@ func (h *Handler) getCampaign(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) getContributionForAddress(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
-		respondErr(w, http.StatusBadRequest, "invalid campaign id")
+		respondError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid campaign id")
 		return
 	}
 
 	addr := chi.URLParam(r, "address")
 	if !common.IsHexAddress(addr) {
-		respondErr(w, http.StatusBadRequest, "invalid address")
+		respondError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid ethereum address")
 		return
 	}
 
 	amount, err := h.reader.GetContribution(r.Context(), id, common.HexToAddress(addr))
 	if err != nil {
-		respondErr(w, http.StatusInternalServerError, err.Error())
+		h.log.Error("get contribution failed", "error", err, "campaignId", id, "address", addr)
+		respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to get contribution")
 		return
 	}
 
@@ -129,57 +171,70 @@ func (h *Handler) getContributionForAddress(w http.ResponseWriter, r *http.Reque
 func (h *Handler) listContributions(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
-		respondErr(w, http.StatusBadRequest, "invalid campaign id")
+		respondError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid campaign id")
 		return
 	}
 
 	limit, offset, err := parsePagination(r)
 	if err != nil {
-		respondErr(w, http.StatusBadRequest, err.Error())
+		respondError(w, http.StatusBadRequest, "INVALID_PARAMS", err.Error())
 		return
 	}
 
-	items, err := h.store.ListContributions(r.Context(), id, limit, offset)
+	items, total, err := h.store.ListContributionsWithCount(r.Context(), id, limit, offset)
 	if err != nil {
-		respondErr(w, http.StatusInternalServerError, err.Error())
+		h.log.Error("list contributions failed", "error", err, "campaignId", id)
+		respondError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to list contributions")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, items)
+	respondPaginated(w, items, total, limit, offset)
 }
 
-func (h *Handler) getConfig(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, h.cfg)
+type APIError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type PaginatedResponse struct {
+	Data       any            `json:"data"`
+	Pagination PaginationMeta `json:"pagination"`
+}
+
+type PaginationMeta struct {
+	Total   int  `json:"total"`
+	Limit   int  `json:"limit"`
+	Offset  int  `json:"offset"`
+	HasMore bool `json:"hasMore"`
 }
 
 func respondJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+func respondError(w http.ResponseWriter, httpCode int, errCode, message string) {
+	respondJSON(w, httpCode, map[string]any{
+		"error": APIError{Code: errCode, Message: message},
+	})
+}
+
 func respondErr(w http.ResponseWriter, code int, msg string) {
-	respondJSON(w, code, map[string]string{"error": msg})
+	respondError(w, code, "ERROR", msg)
 }
 
-func jsonContentType(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		next.ServeHTTP(w, r)
-	})
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+func respondPaginated(w http.ResponseWriter, data any, total, limit, offset int) {
+	resp := PaginatedResponse{
+		Data: data,
+		Pagination: PaginationMeta{
+			Total:   total,
+			Limit:   limit,
+			Offset:  offset,
+			HasMore: offset+limit < total,
+		},
+	}
+	respondJSON(w, http.StatusOK, resp)
 }
 
 func parsePagination(r *http.Request) (limit, offset int, err error) {
@@ -201,4 +256,24 @@ func parsePagination(r *http.Request) (limit, offset int, err error) {
 	}
 
 	return limit, offset, nil
+}
+
+func slogMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			next.ServeHTTP(ww, r)
+
+			logger.Info("request",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", ww.Status(),
+				"bytes", ww.BytesWritten(),
+				"duration_ms", time.Since(start).Milliseconds(),
+				"ip", r.RemoteAddr,
+				"request_id", middleware.GetReqID(r.Context()),
+			)
+		})
+	}
 }

@@ -21,6 +21,14 @@ type CampaignRecord struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
+type StatsResponse struct {
+	TotalCampaigns int    `json:"totalCampaigns"`
+	ActiveCount    int    `json:"activeCampaigns"`
+	SuccessCount   int    `json:"succeededCampaigns"`
+	FailedCount    int    `json:"failedCampaigns"`
+	TotalPledged   string `json:"totalPledgedWei"`
+}
+
 func (s *Store) UpsertCampaign(ctx context.Context, c CampaignRecord, txHash string) error {
 	const q = `
 INSERT INTO campaigns (campaign_id, creator, title, goal_wei, pledged_wei, deadline, withdrawn, status, created_block, created_tx_hash)
@@ -57,15 +65,45 @@ ON DUPLICATE KEY UPDATE
 }
 
 func (s *Store) ListCampaigns(ctx context.Context, limit, offset int) ([]CampaignRecord, error) {
-	const q = `
+	items, _, err := s.ListCampaignsWithCount(ctx, limit, offset, "")
+	return items, err
+}
+
+func (s *Store) ListCampaignsWithCount(ctx context.Context, limit, offset int, status string) ([]CampaignRecord, int, error) {
+	var total int
+	var countErr error
+
+	if status != "" {
+		countErr = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM campaigns WHERE status = ?`, status).Scan(&total)
+	} else {
+		countErr = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM campaigns`).Scan(&total)
+	}
+	if countErr != nil {
+		return nil, 0, fmt.Errorf("count campaigns: %w", countErr)
+	}
+
+	var q string
+	var args []any
+	if status != "" {
+		q = `
+SELECT campaign_id, creator, title, goal_wei, pledged_wei, deadline, withdrawn, status, created_block, updated_at
+FROM campaigns
+WHERE status = ?
+ORDER BY campaign_id DESC
+LIMIT ? OFFSET ?`
+		args = []any{status, limit, offset}
+	} else {
+		q = `
 SELECT campaign_id, creator, title, goal_wei, pledged_wei, deadline, withdrawn, status, created_block, updated_at
 FROM campaigns
 ORDER BY campaign_id DESC
 LIMIT ? OFFSET ?`
+		args = []any{limit, offset}
+	}
 
-	rows, err := s.db.QueryContext(ctx, q, limit, offset)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list campaigns query: %w", err)
+		return nil, 0, fmt.Errorf("list campaigns query: %w", err)
 	}
 	defer rows.Close()
 
@@ -84,12 +122,16 @@ LIMIT ? OFFSET ?`
 			&r.CreatedBlock,
 			&r.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scan campaign: %w", err)
+			return nil, 0, fmt.Errorf("scan campaign: %w", err)
 		}
 		out = append(out, r)
 	}
 
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return out, total, nil
 }
 
 func (s *Store) GetCampaign(ctx context.Context, campaignID uint64) (CampaignRecord, error) {
@@ -119,4 +161,27 @@ WHERE campaign_id = ?`
 	}
 
 	return r, nil
+}
+
+func (s *Store) GetStats(ctx context.Context) (StatsResponse, error) {
+	var stats StatsResponse
+
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM campaigns`).Scan(&stats.TotalCampaigns)
+	if err != nil {
+		return stats, fmt.Errorf("count total: %w", err)
+	}
+
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM campaigns WHERE status = 'active'`).Scan(&stats.ActiveCount)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM campaigns WHERE status = 'succeeded_withdrawn'`).Scan(&stats.SuccessCount)
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM campaigns WHERE status = 'failed_refundable'`).Scan(&stats.FailedCount)
+
+	var pledged sql.NullString
+	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(CAST(pledged_wei AS UNSIGNED)), 0) FROM campaigns`).Scan(&pledged)
+	if pledged.Valid {
+		stats.TotalPledged = pledged.String
+	} else {
+		stats.TotalPledged = "0"
+	}
+
+	return stats, nil
 }

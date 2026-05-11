@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +18,9 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -27,34 +30,38 @@ func main() {
 	cfgPath := envOrDefault("CHAIN_CONFIG_PATH", "config/chain.testnet.example.json")
 	dbDSN := os.Getenv("DATABASE_URL")
 	if dbDSN == "" {
-		log.Fatal("DATABASE_URL is required")
+		logger.Error("DATABASE_URL is required")
+		os.Exit(1)
 	}
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		logger.Error("load config failed", "error", err)
+		os.Exit(1)
 	}
 
 	client, err := chain.DialHTTP(startupCtx, cfg.RPCHTTPURL)
 	if err != nil {
-		log.Fatalf("dial rpc: %v", err)
+		logger.Error("dial rpc failed", "error", err, "url", cfg.RPCHTTPURL)
+		os.Exit(1)
 	}
 	defer client.Close()
 
 	st, err := store.NewMySQLStore(startupCtx, dbDSN)
 	if err != nil {
-		log.Fatalf("new store: %v", err)
+		logger.Error("connect database failed", "error", err)
+		os.Exit(1)
 	}
 	defer st.Close()
 
 	reader, err := chain.NewCrowdFundReader(common.HexToAddress(cfg.ContractAddress), client)
 	if err != nil {
-		log.Fatalf("new crowd reader: %v", err)
+		logger.Error("create chain reader failed", "error", err)
+		os.Exit(1)
 	}
 
 	h := api.NewHandler(st, reader, cfg.Public())
 	addr := envOrDefault("API_ADDR", ":8080")
-	log.Printf("api listening on %s", addr)
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -70,18 +77,26 @@ func main() {
 		errCh <- srv.ListenAndServe()
 	}()
 
+	logger.Info("api server started",
+		"addr", addr,
+		"chain", cfg.ChainName,
+		"contract", cfg.ContractAddress,
+	)
+
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.Printf("shutdown api: %v", err)
+			logger.Error("shutdown error", "error", err)
 		}
 	}()
 
 	if err := <-errCh; err != nil && err != http.ErrServerClosed {
-		log.Fatalf("serve api: %v", err)
+		logger.Error("server stopped unexpectedly", "error", err)
+		os.Exit(1)
 	}
+	logger.Info("api server stopped gracefully")
 }
 
 func envOrDefault(key, fallback string) string {

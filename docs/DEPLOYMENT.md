@@ -20,10 +20,12 @@
 
 ## 推荐方式
 
-- `frontend`：Nginx、对象存储 + CDN、Vercel 等静态托管
-- `api`：容器单独部署，放在反向代理后
+- `frontend`：通过 `docker-compose` 中的 nginx 容器提供，自动反向代理 API 请求；也可独立使用 CDN 或 Vercel 等静态托管
+- `api`：容器单独部署，放在反向代理后，内置限流和安全头
 - `indexer`：单独容器部署，不与 API 混跑
 - `mysql`：托管数据库或专用主机
+
+`docker-compose.yml` 中已包含 `frontend` 服务（nginx:alpine），配合 `nginx.conf` 自动将 `/api/`、`/campaigns`、`/healthz`、`/config` 代理到 API 后端，前端静态文件由 nginx 直接伺服。
 
 ## 配置文件
 
@@ -47,8 +49,10 @@ CHAIN_CONFIG_HOST_PATH=./backend/config/chain.testnet.example.json
 - `MYSQL_DATABASE`
 - `MYSQL_PORT`
 - `API_PORT`
+- `FRONTEND_PORT`（新增，nginx 前端容器端口，默认 3000）
 - `DATABASE_URL`
 - `CHAIN_CONFIG_HOST_PATH`
+- `CORS_ALLOWED_ORIGINS`（新增，允许的跨域来源，生产环境应指定具体域名）
 - `DB_MAX_OPEN_CONNS`
 - `DB_MAX_IDLE_CONNS`
 - `DB_CONN_MAX_LIFETIME`
@@ -64,22 +68,27 @@ docker compose up -d --build
 ## 发布顺序
 
 1. 准备链配置文件
-2. 启动 MySQL
-3. 确认 migrations 已执行
-4. 启动 indexer
-5. 启动 API
-6. 检查 `GET /healthz`
-7. 发布前端
+2. 配置 `CORS_ALLOWED_ORIGINS` 为生产域名
+3. 启动 MySQL
+4. 确认 migrations 已执行
+5. 启动 indexer
+6. 启动 API
+7. 检查 `GET /healthz`
+8. 启动 frontend（nginx）
+9. 验证全链路：前端 -> nginx -> API -> MySQL
 
 ## 上线前检查
 
 - `CHAIN_CONFIG_HOST_PATH` 指向真实配置，而不是占位样例
 - `contractAddress` 与当前部署合约一致
 - `deploymentStartBlock` 与真实部署区块一致
+- `CORS_ALLOWED_ORIGINS` 指向生产域名（而不是 `*`）
 - API 容器可以连通 RPC
 - Indexer 能够推进 checkpoint
 - MySQL 只对内网开放
 - 敏感变量不写死在前端代码里
+- API 容器以非 root 用户运行
+- 容器 HEALTHCHECK 正常通过
 
 ## 运行期建议
 

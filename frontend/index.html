@@ -1,99 +1,265 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="scroll-smooth">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CrowdFund Demo</title>
+  <title>CrowdFund - 去中心化众筹平台</title>
+  <meta name="description" content="基于以太坊的去中心化众筹平台，安全透明，资金由智能合约托管。" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a' },
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.3s ease-out',
+            'slide-up': 'slideUp 0.3s ease-out',
+            'pulse-slow': 'pulse 3s infinite',
+          },
+          keyframes: {
+            fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+            slideUp: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 820px; margin: 24px auto; padding: 0 12px; }
-    h1 { margin-bottom: 8px; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin: 12px 0; }
-    .row { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
-    input, select { padding: 8px; min-width: 180px; }
-    button { padding: 8px 12px; cursor: pointer; }
-    #log { white-space: pre-wrap; background: #111; color: #d5ffd5; padding: 10px; border-radius: 8px; min-height: 80px; max-height: 200px; overflow-y: auto; font-size: 13px; }
-    .muted { color: #666; font-size: 13px; }
-    .campaign-row { border: 1px solid #eee; border-radius: 6px; padding: 10px; margin: 6px 0; cursor: pointer; transition: background 0.15s; }
-    .campaign-row:hover { background: #f5f5f5; }
-    .progress-bar { height: 6px; background: #eee; border-radius: 3px; margin-top: 4px; overflow: hidden; }
-    .progress-fill { height: 100%; border-radius: 3px; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; }
-    .badge-active { background: #e3f2fd; color: #1976d2; }
-    .badge-goal { background: #fff3e0; color: #f57c00; }
-    .badge-success { background: #e8f5e9; color: #388e3c; }
-    .badge-failed { background: #fce4ec; color: #c62828; }
+    [x-cloak] { display: none !important; }
+    .glass { backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    .gradient-text { background: linear-gradient(135deg, #3b82f6, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 12px 24px -8px rgba(0,0,0,0.15); }
+    .skeleton { background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .toast-enter { animation: slideUp 0.3s ease-out; }
   </style>
 </head>
-<body>
-  <h1>CrowdFund</h1>
-  <p class="muted">选择网络后连接钱包，可浏览活动列表、查看详情、以及发起 create / fund / withdraw / refund 操作。</p>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
 
-  <div class="card">
-    <div class="row">
-      <label class="muted" for="networkSelect">网络</label>
-      <select id="networkSelect" style="padding:8px; min-width:200px;">
-        <option value="sepolia">Sepolia 测试网</option>
-        <option value="anvil">本地 Anvil (127.0.0.1:8545)</option>
-      </select>
+  <!-- Toast Container -->
+  <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm"></div>
+
+  <!-- Header -->
+  <header class="sticky top-0 z-40 bg-white/80 glass border-b border-gray-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 bg-gradient-to-br from-brand-500 to-purple-600 rounded-lg flex items-center justify-center">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <h1 class="text-xl font-bold gradient-text">CrowdFund</h1>
+          <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-brand-50 text-brand-700 border border-brand-200">DApp</span>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <!-- Network Selector -->
+          <select id="networkSelect" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+            <option value="sepolia">Sepolia 测试网</option>
+            <option value="anvil">本地 Anvil</option>
+          </select>
+
+          <!-- Connect Wallet Button -->
+          <button id="connectBtn" class="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 transition-colors shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+            <span id="connectBtnText">连接钱包</span>
+          </button>
+        </div>
+      </div>
     </div>
-    <div class="row">
-      <input id="contractAddress" placeholder="合约地址自动加载中..." style="min-width:340px;" />
-      <button id="connectBtn">连接钱包</button>
-    </div>
-    <div id="walletInfo" class="muted">钱包未连接</div>
-  </div>
+  </header>
 
-  <div class="card" id="campaignListCard">
-    <h3>活动列表 <button id="loadCampaignsBtn" style="font-size:12px; margin-left:8px;">刷新</button></h3>
-    <div id="campaignList" class="muted">正在加载...</div>
-  </div>
-
-  <div class="card" id="campaignDetailCard" style="display:none;">
-    <h3>活动详情 <button id="backToListBtn" style="font-size:12px; margin-left:8px;">返回列表</button></h3>
-    <div id="campaignDetail"></div>
-    <h4 style="margin-bottom:4px;">捐款记录</h4>
-    <div id="contributionList" class="muted"></div>
-  </div>
-
-  <div class="card">
-    <h3>创建活动 createCampaign</h3>
-    <div class="row">
-      <input id="createTitle" placeholder="标题" />
-      <input id="createGoalEth" placeholder="目标金额(ETH), e.g. 1.5" />
-      <input id="createDuration" placeholder="持续秒数, e.g. 86400" />
-      <button id="createBtn">创建</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3>捐款 fund</h3>
-    <div class="row">
-      <input id="fundCampaignId" placeholder="campaignId" />
-      <input id="fundAmountEth" placeholder="捐款(ETH), e.g. 0.1" />
-      <button id="fundBtn">捐款</button>
+  <!-- Wallet Info Bar (shown when connected) -->
+  <div id="walletBar" class="hidden bg-green-50 border-b border-green-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse-slow"></div>
+        <span id="walletAddress" class="text-sm text-green-800 font-mono"></span>
+      </div>
+      <span id="walletNetwork" class="text-xs text-green-600 font-medium"></span>
     </div>
   </div>
 
-  <div class="card">
-    <h3>提款 withdraw</h3>
-    <div class="row">
-      <input id="withdrawCampaignId" placeholder="campaignId" />
-      <button id="withdrawBtn">提款</button>
-    </div>
-  </div>
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-  <div class="card">
-    <h3>退款 refund</h3>
-    <div class="row">
-      <input id="refundCampaignId" placeholder="campaignId" />
-      <button id="refundBtn">退款</button>
+    <!-- Hero Stats -->
+    <div id="statsSection" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <div class="text-sm text-gray-500 font-medium">活动总数</div>
+        <div id="statTotal" class="text-2xl font-bold text-gray-900 mt-1">--</div>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <div class="text-sm text-gray-500 font-medium">进行中</div>
+        <div id="statActive" class="text-2xl font-bold text-brand-600 mt-1">--</div>
+      </div>
+      <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <div class="text-sm text-gray-500 font-medium">已成功</div>
+        <div id="statSuccess" class="text-2xl font-bold text-green-600 mt-1">--</div>
+      </div>
     </div>
-  </div>
 
-  <div class="card">
-    <h3>日志</h3>
-    <div id="log"></div>
-  </div>
+    <!-- Tab Navigation -->
+    <div class="flex items-center justify-between mb-6">
+      <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <button id="tabCampaigns" class="tab-btn px-4 py-2 text-sm font-medium rounded-md bg-white text-gray-900 shadow-sm" data-tab="campaigns">活动列表</button>
+        <button id="tabCreate" class="tab-btn px-4 py-2 text-sm font-medium rounded-md text-gray-600 hover:text-gray-900" data-tab="create">发起活动</button>
+        <button id="tabActions" class="tab-btn px-4 py-2 text-sm font-medium rounded-md text-gray-600 hover:text-gray-900" data-tab="actions">快捷操作</button>
+      </div>
+      <button id="refreshBtn" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        刷新
+      </button>
+    </div>
+
+    <!-- Campaigns Panel -->
+    <div id="panelCampaigns" class="tab-panel">
+      <!-- Campaign List -->
+      <div id="campaignList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Skeleton loading -->
+        <div class="skeleton rounded-xl h-48"></div>
+        <div class="skeleton rounded-xl h-48"></div>
+        <div class="skeleton rounded-xl h-48"></div>
+      </div>
+
+      <!-- Empty State -->
+      <div id="emptyState" class="hidden text-center py-16">
+        <svg class="mx-auto h-16 w-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+        <h3 class="mt-4 text-lg font-medium text-gray-900">暂无众筹活动</h3>
+        <p class="mt-2 text-sm text-gray-500">发起第一个众筹活动来开始吧</p>
+      </div>
+    </div>
+
+    <!-- Campaign Detail (shown when clicking a campaign) -->
+    <div id="panelDetail" class="tab-panel hidden">
+      <button id="backToListBtn" class="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 mb-4">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        返回列表
+      </button>
+      <div id="campaignDetail" class="bg-white rounded-xl border border-gray-200 shadow-sm p-6"></div>
+      <div class="mt-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-3">捐款记录</h3>
+        <div id="contributionList" class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden"></div>
+      </div>
+    </div>
+
+    <!-- Create Campaign Panel -->
+    <div id="panelCreate" class="tab-panel hidden">
+      <div class="max-w-xl mx-auto">
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <h2 class="text-lg font-semibold text-gray-900 mb-1">发起众筹活动</h2>
+          <p class="text-sm text-gray-500 mb-6">创建一个新的去中心化众筹活动，资金将由智能合约安全托管。</p>
+
+          <form id="createForm" class="space-y-4">
+            <div>
+              <label for="createTitle" class="block text-sm font-medium text-gray-700 mb-1">活动标题</label>
+              <input id="createTitle" type="text" placeholder="为你的项目起一个吸引人的名字" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors" required />
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label for="createGoalEth" class="block text-sm font-medium text-gray-700 mb-1">目标金额 (ETH)</label>
+                <input id="createGoalEth" type="number" step="0.001" min="0.001" placeholder="1.0" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors" required />
+              </div>
+              <div>
+                <label for="createDuration" class="block text-sm font-medium text-gray-700 mb-1">持续时间</label>
+                <select id="createDuration" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors">
+                  <option value="3600">1 小时</option>
+                  <option value="86400">1 天</option>
+                  <option value="259200">3 天</option>
+                  <option value="604800" selected>7 天</option>
+                  <option value="1209600">14 天</option>
+                  <option value="2592000">30 天</option>
+                </select>
+              </div>
+            </div>
+            <button id="createBtn" type="submit" class="w-full py-3 bg-brand-600 text-white font-medium rounded-lg hover:bg-brand-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+              <span id="createBtnText">发起活动</span>
+              <svg id="createSpinner" class="hidden animate-spin inline-block w-4 h-4 ml-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions Panel -->
+    <div id="panelActions" class="tab-panel hidden">
+      <div class="max-w-xl mx-auto space-y-4">
+        <!-- Fund -->
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+              <h3 class="font-semibold text-gray-900">捐款支持</h3>
+              <p class="text-sm text-gray-500">向指定活动捐款 ETH</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <input id="fundCampaignId" type="number" min="0" placeholder="活动 ID" class="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none" />
+            <input id="fundAmountEth" type="number" step="0.001" min="0.001" placeholder="金额 (ETH)" class="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none" />
+          </div>
+          <button id="fundBtn" class="mt-3 w-full py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">捐款</button>
+        </div>
+
+        <!-- Withdraw -->
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+              <h3 class="font-semibold text-gray-900">提取资金</h3>
+              <p class="text-sm text-gray-500">活动达标后，创建者可提取全部资金</p>
+            </div>
+          </div>
+          <input id="withdrawCampaignId" type="number" min="0" placeholder="活动 ID" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none" />
+          <button id="withdrawBtn" class="mt-3 w-full py-2.5 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50">提款</button>
+        </div>
+
+        <!-- Refund -->
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+              <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+            </div>
+            <div>
+              <h3 class="font-semibold text-gray-900">退款</h3>
+              <p class="text-sm text-gray-500">活动失败后，捐款人可取回自己的捐款</p>
+            </div>
+          </div>
+          <input id="refundCampaignId" type="number" min="0" placeholder="活动 ID" class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none" />
+          <button id="refundBtn" class="mt-3 w-full py-2.5 bg-orange-600 text-white font-medium rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50">退款</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-gray-200 mt-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 bg-gradient-to-br from-brand-500 to-purple-600 rounded flex items-center justify-center">
+            <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <span class="text-sm font-medium text-gray-600">CrowdFund</span>
+        </div>
+        <div class="flex items-center gap-4 text-sm text-gray-500">
+          <span>智能合约托管</span>
+          <span class="text-gray-300">|</span>
+          <span>去中心化</span>
+          <span class="text-gray-300">|</span>
+          <span>安全透明</span>
+        </div>
+        <div id="contractDisplay" class="text-xs text-gray-400 font-mono"></div>
+      </div>
+    </div>
+  </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
   <script src="./app.js"></script>

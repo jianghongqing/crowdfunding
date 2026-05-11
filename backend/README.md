@@ -19,6 +19,7 @@
 - `DATABASE_URL`：MySQL DSN，必填
 - `CHAIN_CONFIG_PATH`：链配置文件路径，默认 `config/chain.testnet.example.json`
 - `API_ADDR`：API 监听地址，默认 `:8080`
+- `CORS_ALLOWED_ORIGINS`：允许的跨域来源，多个用逗号分隔，默认 `*`
 - `DB_MAX_OPEN_CONNS`：连接池最大连接数，默认 `20`
 - `DB_MAX_IDLE_CONNS`：连接池最大空闲连接数，默认 `10`
 - `DB_CONN_MAX_LIFETIME`：连接最长生命周期，默认 `30m`
@@ -30,6 +31,7 @@
 export DATABASE_URL='root:password@tcp(127.0.0.1:3306)/crowdfunding?charset=utf8mb4&parseTime=true'
 export CHAIN_CONFIG_PATH='config/chain.testnet.example.json'
 export API_ADDR=':8080'
+export CORS_ALLOWED_ORIGINS='https://crowdfund.example.com'
 ```
 
 ## 本地启动
@@ -55,12 +57,56 @@ go run ./cmd/api
 
 ## API
 
-- `GET /healthz`
-- `GET /campaigns?limit=20&offset=0`
-- `GET /campaigns/{id}`
-- `GET /campaigns/{id}/contributions/{address}`
+所有业务接口均提供 `/api/v1/` 前缀版本，同时保留无前缀的旧路由以兼容已有客户端。
 
-`/campaigns` 支持分页，`limit` 范围为 `1-100`。
+### 端点列表
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/healthz` | 健康检查 |
+| GET | `/config` | 返回公共链配置（合约地址、chainId 等） |
+| GET | `/api/v1/campaigns` | 活动列表（分页） |
+| GET | `/api/v1/campaigns/{id}` | 活动详情 |
+| GET | `/api/v1/campaigns/{id}/contributions` | 活动的捐款记录（分页） |
+| GET | `/api/v1/campaigns/{id}/contributions/{address}` | 查询某地址在某活动的捐款额 |
+| GET | `/api/v1/stats` | 平台统计数据 |
+
+### 分页参数
+
+- `limit`：每页条数，范围 1-100，默认 20
+- `offset`：偏移量，默认 0
+- `status`：（仅 campaigns）按状态筛选，可选值 `active` / `goal_reached_pending_withdraw` / `succeeded_withdrawn` / `failed_refundable`
+
+### 响应格式
+
+列表接口返回分页元数据：
+
+```json
+{
+  "data": [...],
+  "pagination": {
+    "total": 42,
+    "limit": 20,
+    "offset": 0,
+    "hasMore": true
+  }
+}
+```
+
+错误响应：
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "campaign not found"
+  }
+}
+```
+
+### 限流
+
+API 内置基于 IP 的令牌桶限流（30 req/s，burst 60）。超出限制时返回 HTTP 429 和 `Retry-After` 头。
 
 ## 容器化部署
 

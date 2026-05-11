@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,15 +15,20 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
+
 	cfgPath := envOrDefault("CHAIN_CONFIG_PATH", "config/chain.testnet.example.json")
 	dbDSN := os.Getenv("DATABASE_URL")
 	if dbDSN == "" {
-		log.Fatal("DATABASE_URL is required")
+		logger.Error("DATABASE_URL is required")
+		os.Exit(1)
 	}
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		logger.Error("load config failed", "error", err)
+		os.Exit(1)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -34,25 +39,35 @@ func main() {
 
 	client, err := chain.DialHTTP(startupCtx, cfg.RPCHTTPURL)
 	if err != nil {
-		log.Fatalf("dial rpc: %v", err)
+		logger.Error("dial rpc failed", "error", err, "url", cfg.RPCHTTPURL)
+		os.Exit(1)
 	}
 	defer client.Close()
 
 	st, err := store.NewMySQLStore(startupCtx, dbDSN)
 	if err != nil {
-		log.Fatalf("new store: %v", err)
+		logger.Error("connect database failed", "error", err)
+		os.Exit(1)
 	}
 	defer st.Close()
 
 	svc, err := indexer.New(cfg, client, st)
 	if err != nil {
-		log.Fatalf("new indexer: %v", err)
+		logger.Error("create indexer failed", "error", err)
+		os.Exit(1)
 	}
 
-	log.Printf("indexer started for contract %s", cfg.ContractAddress)
+	logger.Info("indexer started",
+		"contract", cfg.ContractAddress,
+		"chain", cfg.ChainName,
+		"startBlock", cfg.DeploymentStartBlock,
+	)
+
 	if err := svc.Run(ctx); err != nil && err != context.Canceled {
-		log.Fatalf("indexer stopped with error: %v", err)
+		logger.Error("indexer stopped with error", "error", err)
+		os.Exit(1)
 	}
+	logger.Info("indexer stopped gracefully")
 }
 
 func envOrDefault(key, fallback string) string {

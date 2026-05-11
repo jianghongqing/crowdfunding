@@ -79,6 +79,17 @@ type ContributionRecord struct {
 }
 
 func (s *Store) ListContributions(ctx context.Context, campaignID uint64, limit, offset int) ([]ContributionRecord, error) {
+	items, _, err := s.ListContributionsWithCount(ctx, campaignID, limit, offset)
+	return items, err
+}
+
+func (s *Store) ListContributionsWithCount(ctx context.Context, campaignID uint64, limit, offset int) ([]ContributionRecord, int, error) {
+	var total int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM contributions WHERE campaign_id = ?`, campaignID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count contributions: %w", err)
+	}
+
 	const q = `
 SELECT id, campaign_id, funder, amount_wei, tx_hash, block_number, log_index, created_at
 FROM contributions
@@ -88,7 +99,7 @@ LIMIT ? OFFSET ?`
 
 	rows, err := s.db.QueryContext(ctx, q, campaignID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("list contributions query: %w", err)
+		return nil, 0, fmt.Errorf("list contributions query: %w", err)
 	}
 	defer rows.Close()
 
@@ -97,7 +108,7 @@ LIMIT ? OFFSET ?`
 		var r ContributionRecord
 		var createdAt any
 		if err := rows.Scan(&r.ID, &r.CampaignID, &r.Funder, &r.AmountWei, &r.TxHash, &r.BlockNumber, &r.LogIndex, &createdAt); err != nil {
-			return nil, fmt.Errorf("scan contribution: %w", err)
+			return nil, 0, fmt.Errorf("scan contribution: %w", err)
 		}
 		if t, ok := createdAt.(string); ok {
 			r.CreatedAt = t
@@ -107,7 +118,11 @@ LIMIT ? OFFSET ?`
 		out = append(out, r)
 	}
 
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return out, total, nil
 }
 
 func (s *Store) UpsertCheckpoint(ctx context.Context, worker string, block uint64) error {
