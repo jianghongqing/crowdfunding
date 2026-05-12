@@ -1,3 +1,6 @@
+// API 服务入口。负责启动 HTTP 服务器，连接数据库和链 RPC。
+// 启动流程：加载配置 -> 连接 RPC -> 连接 MySQL -> 注册路由 -> 监听端口。
+// 优雅关闭：收到 SIGINT/SIGTERM 后等待在途请求完成（最多 10s）再退出。
 package main
 
 import (
@@ -21,9 +24,11 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
+	// 监听系统信号，用于优雅关闭
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// 启动阶段的超时保护：15s 内必须完成所有连接初始化
 	startupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -54,6 +59,7 @@ func main() {
 	}
 	defer st.Close()
 
+	// 链读取器供 API 在数据库未命中时回退到链上查询
 	reader, err := chain.NewCrowdFundReader(common.HexToAddress(cfg.ContractAddress), client)
 	if err != nil {
 		logger.Error("create chain reader failed", "error", err)
@@ -63,6 +69,7 @@ func main() {
 	h := api.NewHandler(st, reader, cfg.Public())
 	addr := envOrDefault("API_ADDR", ":8080")
 
+	// 超时配置防止慢客户端占用连接
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           h.Routes(),
@@ -83,6 +90,7 @@ func main() {
 		"contract", cfg.ContractAddress,
 	)
 
+	// 优雅关闭：等待 context 取消后 shutdown，给在途请求最多 10s 完成
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)

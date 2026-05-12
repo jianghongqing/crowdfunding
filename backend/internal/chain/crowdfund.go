@@ -1,3 +1,5 @@
+// Package chain 封装与以太坊 RPC 的交互，提供合约数据读取能力。
+// API 在数据库未命中时调用此包回退到链上查询。
 package chain
 
 import (
@@ -12,6 +14,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+// CampaignView 链上查询结果的 API 友好视图。
+// 金额用字符串序列化，避免 JSON 大整数精度丢失。
 type CampaignView struct {
 	ID         uint64 `json:"id"`
 	Creator    string `json:"creator"`
@@ -23,6 +27,7 @@ type CampaignView struct {
 	Status     string `json:"status"`
 }
 
+// CrowdFundReader 只读合约调用器，通过 eth_call 读取链上状态（不消耗 gas）。
 type CrowdFundReader struct {
 	contract *crowdfund.CrowdFundCaller
 }
@@ -35,6 +40,7 @@ func NewCrowdFundReader(address common.Address, backend bind.ContractCaller) (*C
 	return &CrowdFundReader{contract: c}, nil
 }
 
+// GetCampaign 从链上读取活动完整状态并推导业务状态（active/failed/succeeded）。
 func (r *CrowdFundReader) GetCampaign(ctx context.Context, campaignID uint64) (CampaignView, error) {
 	raw, err := r.contract.GetCampaign(&bind.CallOpts{Context: ctx}, new(big.Int).SetUint64(campaignID))
 	if err != nil {
@@ -54,6 +60,7 @@ func (r *CrowdFundReader) GetCampaign(ctx context.Context, campaignID uint64) (C
 	}, nil
 }
 
+// GetContribution 读取某地址在某活动中的累计捐款额（对应合约 contributions mapping）。
 func (r *CrowdFundReader) GetContribution(ctx context.Context, campaignID uint64, user common.Address) (string, error) {
 	value, err := r.contract.Contributions(&bind.CallOpts{Context: ctx}, new(big.Int).SetUint64(campaignID), user)
 	if err != nil {
@@ -62,6 +69,9 @@ func (r *CrowdFundReader) GetContribution(ctx context.Context, campaignID uint64
 	return value.String(), nil
 }
 
+// DeriveStatus 根据链上字段推导活动业务状态。
+// 合约本身没有 status 字段，状态需要从 pledged/goal/deadline/withdrawn 四个维度计算。
+// 判定优先级：已提款 > 已达标 > 已过期 > 进行中。
 func DeriveStatus(pledged, goal, deadline *big.Int, withdrawn bool) string {
 	if withdrawn {
 		return "succeeded_withdrawn"

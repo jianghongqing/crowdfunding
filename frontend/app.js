@@ -1,7 +1,17 @@
+/**
+ * CrowdFund DApp 前端主逻辑。
+ *
+ * 架构：纯静态页面 + ethers.js，不依赖构建工具。
+ * - 钱包交互：通过 MetaMask 等 window.ethereum 注入器直接签名发交易
+ * - 数据展示：调用后端 API（/campaigns, /config 等）获取 indexer 同步的链下数据
+ * - 实时事件：通过 ethers 合约事件监听，在交易确认后即时通知用户
+ */
 'use strict';
 
+// 后端 API 地址，Docker Compose 部署时由 nginx 反向代理，无需修改
 const API_BASE = 'http://localhost:8080';
 
+// CrowdFund 合约的人类可读 ABI（ethers v6 格式）
 const ABI = [
   "function getCampaign(uint256 campaignId) view returns (tuple(uint256 id, address creator, string title, uint256 goal, uint256 pledged, uint256 deadline, bool withdrawn))",
   "function campaigns(uint256) view returns (uint256 id, address creator, string title, uint256 goal, uint256 pledged, uint256 deadline, bool withdrawn)",
@@ -17,6 +27,7 @@ const ABI = [
   "event Refunded(uint256 indexed campaignId, address indexed funder, uint256 amount)"
 ];
 
+// 支持的网络配置，包含链信息和区块浏览器 URL 生成器
 const NETWORKS = {
   sepolia: {
     label: "Sepolia 测试网",
@@ -38,17 +49,19 @@ const NETWORKS = {
   }
 };
 
-// ---- State ----
-let provider = null;
-let signer = null;
-let contract = null;
-let currentCampaigns = [];
+// ---- 全局状态 ----
+// 连接钱包后由 connectWallet() 初始化，断开时重置为 null
+let provider = null;   // ethers.BrowserProvider
+let signer = null;     // 当前钱包签名器
+let contract = null;   // 绑定了 signer 的合约实例，用于发交易
+let currentCampaigns = []; // 缓存当前活动列表，供 updateStats 使用
 
 // ---- DOM Helpers ----
 const $ = (id) => document.getElementById(id);
 const $$ = (sel) => document.querySelectorAll(sel);
 
-// ---- Toast Notifications ----
+// ---- Toast 通知系统 ----
+// 替代原始日志面板，4秒自动消失，支持 success/error/info/warning 四种类型
 function toast(message, type = 'info') {
   const container = $('toastContainer');
   const colors = {
@@ -77,6 +90,7 @@ function toast(message, type = 'info') {
 }
 
 // ---- Utilities ----
+// 利用 DOM textContent 自动转义，防止 XSS
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
@@ -121,6 +135,7 @@ function statusLabel(s) {
   return map[s] || s;
 }
 
+// 每种活动状态对应的 Tailwind CSS 类名配置（背景、文字、圆点、进度条颜色）
 function statusConfig(s) {
   const configs = {
     active: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500', bar: 'bg-blue-500' },

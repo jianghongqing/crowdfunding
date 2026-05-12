@@ -1,3 +1,5 @@
+// Package store 封装 MySQL 数据访问层。
+// campaigns 表存储由 indexer 同步的链上活动快照，是 API 读取的主要数据源。
 package store
 
 import (
@@ -8,6 +10,7 @@ import (
 	"time"
 )
 
+// CampaignRecord 对应 campaigns 表的一行，金额字段用字符串避免 uint256 溢出。
 type CampaignRecord struct {
 	CampaignID   uint64    `json:"campaignId"`
 	Creator      string    `json:"creator"`
@@ -21,6 +24,7 @@ type CampaignRecord struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
+// StatsResponse 平台级聚合统计，供 /api/v1/stats 端点返回。
 type StatsResponse struct {
 	TotalCampaigns int    `json:"totalCampaigns"`
 	ActiveCount    int    `json:"activeCampaigns"`
@@ -29,6 +33,8 @@ type StatsResponse struct {
 	TotalPledged   string `json:"totalPledgedWei"`
 }
 
+// UpsertCampaign 插入或更新活动快照。
+// 使用 ON DUPLICATE KEY UPDATE 实现幂等写入：indexer 重扫同一区块不会产生脏数据。
 func (s *Store) UpsertCampaign(ctx context.Context, c CampaignRecord, txHash string) error {
 	const q = `
 INSERT INTO campaigns (campaign_id, creator, title, goal_wei, pledged_wei, deadline, withdrawn, status, created_block, created_tx_hash)
@@ -64,11 +70,14 @@ ON DUPLICATE KEY UPDATE
 	return nil
 }
 
+// ListCampaigns 向后兼容的列表查询（不返回总数），内部代理到 ListCampaignsWithCount。
 func (s *Store) ListCampaigns(ctx context.Context, limit, offset int) ([]CampaignRecord, error) {
 	items, _, err := s.ListCampaignsWithCount(ctx, limit, offset, "")
 	return items, err
 }
 
+// ListCampaignsWithCount 分页查询活动列表并返回总数，支持按 status 筛选。
+// 使用两次查询（COUNT + SELECT）而非 SQL_CALC_FOUND_ROWS，兼容性更好。
 func (s *Store) ListCampaignsWithCount(ctx context.Context, limit, offset int, status string) ([]CampaignRecord, int, error) {
 	var total int
 	var countErr error
@@ -163,6 +172,8 @@ WHERE campaign_id = ?`
 	return r, nil
 }
 
+// GetStats 执行多次 COUNT 聚合查询获取平台统计。
+// 子状态查询失败不影响整体（忽略错误），只有总数查询失败才报错。
 func (s *Store) GetStats(ctx context.Context) (StatsResponse, error) {
 	var stats StatsResponse
 
@@ -175,6 +186,7 @@ func (s *Store) GetStats(ctx context.Context) (StatsResponse, error) {
 	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM campaigns WHERE status = 'succeeded_withdrawn'`).Scan(&stats.SuccessCount)
 	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM campaigns WHERE status = 'failed_refundable'`).Scan(&stats.FailedCount)
 
+	// pledged_wei 是字符串存储的大整数，CAST AS UNSIGNED 后求和
 	var pledged sql.NullString
 	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(CAST(pledged_wei AS UNSIGNED)), 0) FROM campaigns`).Scan(&pledged)
 	if pledged.Valid {

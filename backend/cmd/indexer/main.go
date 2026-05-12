@@ -1,3 +1,5 @@
+// Indexer 服务入口。负责持续监听链上 CrowdFund 合约事件并同步到 MySQL。
+// 与 API 服务分离部署：同步失败不影响查询服务，两者可独立扩容。
 package main
 
 import (
@@ -63,6 +65,7 @@ func main() {
 		"startBlock", cfg.DeploymentStartBlock,
 	)
 
+	// Run 阻塞直到 context 取消或遇到不可恢复的错误
 	if err := svc.Run(ctx); err != nil && err != context.Canceled {
 		logger.Error("indexer stopped with error", "error", err)
 		os.Exit(1)

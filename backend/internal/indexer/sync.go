@@ -1,3 +1,5 @@
+// Package indexer 持续追踪链上合约事件并同步到 MySQL。
+// 核心循环：读链头 -> 计算安全区块 -> 批量拉取日志 -> 解析入库 -> 更新 checkpoint。
 package indexer
 
 import (
@@ -19,15 +21,19 @@ import (
 )
 
 const workerName = "crowdfund-indexer"
+
+// blockBatchSize 单次 FilterLogs 的最大区块范围，过大可能被 RPC 限制，过小增加请求次数。
 const blockBatchSize uint64 = 1000
 
+// Service 是 indexer 的核心结构，持有 RPC 客户端、合约绑定和数据库。
 type Service struct {
 	cfg      config.ChainConfig
 	client   *ethclient.Client
-	contract *crowdfund.CrowdFundFilterer
-	caller   *crowdfund.CrowdFundCaller
+	contract *crowdfund.CrowdFundFilterer // 用于解析事件日志
+	caller   *crowdfund.CrowdFundCaller   // 用于事件发生后回读完整状态
 	store    *store.Store
 
+	// 预计算的事件 topic hash，避免每次比较时重新哈希
 	topicCampaignCreated common.Hash
 	topicFunded          common.Hash
 	topicRefunded        common.Hash
@@ -46,6 +52,7 @@ func New(cfg config.ChainConfig, client *ethclient.Client, store *store.Store) (
 		return nil, fmt.Errorf("new caller: %w", err)
 	}
 
+	// topic hash 由事件签名的 keccak256 决定，这里硬编码避免运行时依赖 ABI 文件
 	return &Service{
 		cfg:                  cfg,
 		client:               client,
@@ -59,6 +66,7 @@ func New(cfg config.ChainConfig, client *ethclient.Client, store *store.Store) (
 	}, nil
 }
 
+// Run 主循环：每 8 秒执行一次同步，直到 context 取消（收到 SIGINT/SIGTERM）。
 func (s *Service) Run(ctx context.Context) error {
 	for {
 		if err := s.syncOnce(ctx); err != nil {
@@ -73,6 +81,7 @@ func (s *Service) Run(ctx context.Context) error {
 	}
 }
 
+// syncOnce 执行一轮同步：从 checkpoint 扫到 safeHead（链头 - confirmations）。
 func (s *Service) syncOnce(ctx context.Context) error {
 	head, err := s.client.BlockNumber(ctx)
 	if err != nil {
@@ -82,6 +91,7 @@ func (s *Service) syncOnce(ctx context.Context) error {
 		return nil
 	}
 
+	// safeHead = 链头 - 确认数，只扫已确认的区块，避免处理可能被 reorg 的数据
 	safeHead := head - s.cfg.Confirmations
 	from, err := s.store.GetCheckpoint(ctx, workerName, s.cfg.DeploymentStartBlock)
 	if err != nil {
@@ -91,6 +101,7 @@ func (s *Service) syncOnce(ctx context.Context) error {
 		return nil
 	}
 
+	// 分批拉取日志，每批最多 blockBatchSize 个区块
 	for batchFrom := from; batchFrom <= safeHead; {
 		batchTo := min(batchFrom+blockBatchSize-1, safeHead)
 		query := ethereum.FilterQuery{
@@ -110,6 +121,7 @@ func (s *Service) syncOnce(ctx context.Context) error {
 			}
 		}
 
+		// 每批处理完后更新 checkpoint，确保崩溃后能从断点续扫
 		if err := s.store.UpsertCheckpoint(ctx, workerName, batchTo+1); err != nil {
 			return err
 		}
@@ -120,6 +132,8 @@ func (s *Service) syncOnce(ctx context.Context) error {
 	return nil
 }
 
+// handleLog 根据事件 topic 分发到对应的处理逻辑。
+// 每个事件处理后都会回读链上最新状态刷新 campaigns 表快照。
 func (s *Service) handleLog(ctx context.Context, lg types.Log) error {
 	if len(lg.Topics) == 0 {
 		return nil
@@ -132,6 +146,7 @@ func (s *Service) handleLog(ctx context.Context, lg types.Log) error {
 			return fmt.Errorf("parse CampaignCreated: %w", err)
 		}
 
+		// 事件只包含部分字段，需要回读合约获取完整状态
 		onchain, err := s.caller.GetCampaign(&bind.CallOpts{Context: ctx}, ev.CampaignId)
 		if err != nil {
 			return fmt.Errorf("read campaign after create: %w", err)
@@ -160,6 +175,7 @@ func (s *Service) handleLog(ctx context.Context, lg types.Log) error {
 			return err
 		}
 
+		// 捐款后活动的 pledged 和 status 可能变化，刷新快照
 		return s.refreshCampaign(ctx, ev.CampaignId.Uint64())
 	case s.topicRefunded:
 		ev, err := s.contract.ParseRefunded(lg)
@@ -199,6 +215,8 @@ func min(a, b uint64) uint64 {
 	return b
 }
 
+// refreshCampaign 从链上回读活动最新状态并刷新数据库快照。
+// CreatedBlock 设为 0 表示这是刷新操作而非首次创建（UpsertCampaign 不会覆盖已有的非零值）。
 func (s *Service) refreshCampaign(ctx context.Context, campaignID uint64) error {
 	raw, err := s.caller.GetCampaign(&bind.CallOpts{Context: ctx}, big.NewInt(0).SetUint64(campaignID))
 	if err != nil {
