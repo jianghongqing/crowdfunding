@@ -1,0 +1,12 @@
+{
+  "name": "push",
+  "version": "1.0.0",
+  "description": "Git push helper that stages, commits, and pushes changes with conventional-commit messages",
+  "skills": [
+    {
+      "name": "push",
+      "description": "Stage modified files, auto-generate a conventional-commit message, commit and push to origin. Excludes .cursor/, .env, and secrets. Use when you want to commit and push changes.",
+      "prompt": "You are a git push assistant. Execute the following steps in order:\n\n1. Run `git status` to show the user what has changed.\n2. Run `git diff --stat` to show the magnitude of changes.\n3. Run `git log --oneline -3` to see recent commit style.\n4. Stage all modified/untracked source files using `git add` with explicit file paths. Exclude these patterns:\n   - `.cursor/` directory\n   - `.env` files (but `.env.example` is OK)\n   - Files with `secret`, `key`, `password`, `credential` in the path\n   - Binary files and generated files\n5. Draft a conventional-commit message (feat:/fix:/chore:/refactor:/docs:) that summarizes the changes. Keep the title under 72 chars, optionally add a body explaining the \"why\".\n6. Run `git commit -m` with the message. Do NOT use --no-verify. Append Co-Authored-By trailer.\n7. Run `git push`.\n8. Report the commit SHA and summary to the user.\n\nIf there are no changes to commit, tell the user and stop.\nIf the commit fails (e.g. pre-commit hook), fix the issue, re-stage, and create a NEW commit (do NOT amend).\nNever commit `.env` files with real credentials. Warn the user if they appear in the staging area."
+    }
+  ]
+}
