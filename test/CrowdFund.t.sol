@@ -91,6 +91,47 @@ contract CrowdFundTest is Test {
         assertEq(crowdFund.contributions(campaignId, alice), 0);
     }
 
+    function test_RefundReducesCampaignPledged() public {
+        uint256 campaignId = _createCampaign();
+
+        vm.prank(alice);
+        crowdFund.fund{value: 3 ether}(campaignId);
+
+        vm.prank(bob);
+        crowdFund.fund{value: 2 ether}(campaignId);
+
+        vm.warp(block.timestamp + DURATION + 1);
+
+        vm.prank(alice);
+        crowdFund.refund(campaignId);
+
+        CrowdFund.Campaign memory campaign = crowdFund.getCampaign(campaignId);
+        assertEq(campaign.pledged, 2 ether);
+        assertEq(crowdFund.contributions(campaignId, alice), 0);
+        assertEq(crowdFund.contributions(campaignId, bob), 2 ether);
+    }
+
+    function test_AllRefundsReducePledgedToZero() public {
+        uint256 campaignId = _createCampaign();
+
+        vm.prank(alice);
+        crowdFund.fund{value: 3 ether}(campaignId);
+
+        vm.prank(bob);
+        crowdFund.fund{value: 2 ether}(campaignId);
+
+        vm.warp(block.timestamp + DURATION + 1);
+
+        vm.prank(alice);
+        crowdFund.refund(campaignId);
+
+        vm.prank(bob);
+        crowdFund.refund(campaignId);
+
+        CrowdFund.Campaign memory campaign = crowdFund.getCampaign(campaignId);
+        assertEq(campaign.pledged, 0);
+    }
+
     function test_RevertIfFundingAfterDeadline() public {
         uint256 campaignId = _createCampaign();
 

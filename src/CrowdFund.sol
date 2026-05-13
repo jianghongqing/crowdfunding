@@ -121,8 +121,9 @@ contract CrowdFund {
         uint256 amount = contributions[campaignId][msg.sender];
         if (amount == 0) revert NothingToRefund();
 
-        // 先清零，防重入/重复调用。
+        // 先更新链上状态，防重入/重复调用，并保持 pledged 表示当前未退款余额。
         contributions[campaignId][msg.sender] = 0;
+        campaign.pledged -= amount;
 
         (bool success,) = payable(msg.sender).call{value: amount}("");
         require(success, "TRANSFER_FAILED");

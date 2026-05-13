@@ -8,8 +8,8 @@
  */
 'use strict';
 
-// 后端 API 地址，Docker Compose 部署时由 nginx 反向代理，无需修改
-const API_BASE = 'http://localhost:8080';
+// 后端 API 地址默认使用同源路径，便于通过 nginx/HTTPS 统一托管；本地调试可通过 window 或 localStorage 覆盖。
+const API_BASE = window.CROWDFUND_API_BASE || localStorage.getItem('CROWDFUND_API_BASE') || '';
 
 // CrowdFund 合约的人类可读 ABI（ethers v6 格式）
 const ABI = [
@@ -160,7 +160,8 @@ async function apiGet(path) {
   const res = await fetch(API_BASE + path);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `HTTP ${res.status}`);
+    const message = typeof body.error === 'string' ? body.error : body.error?.message;
+    throw new Error(message || `HTTP ${res.status}`);
   }
   return res.json();
 }

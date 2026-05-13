@@ -191,10 +191,10 @@ cp .env.example .env
 # MySQL
 MYSQL_ROOT_PASSWORD=一个强密码_至少16位
 MYSQL_DATABASE=crowdfunding
-MYSQL_PORT=3306
 
 # API 服务
-API_PORT=8080
+API_PORT=127.0.0.1:8080
+CORS_ALLOWED_ORIGINS=https://crowdfund.example.com
 
 # 链配置指向真实文件
 CHAIN_CONFIG_HOST_PATH=./backend/config/chain.sepolia.json
@@ -281,11 +281,30 @@ server {
 
     # API 反向代理
     location /api/ {
-        proxy_pass http://127.0.0.1:8080/;
+        proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /healthz {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /config {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /campaigns {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
 EOF
@@ -309,21 +328,9 @@ sudo certbot --nginx -d crowdfund.example.com
 
 Certbot 会自动修改 Nginx 配置并设置自动续期。
 
-### 修改前端 API 地址
+### 前端 API 地址
 
-编辑 `~/crowdfunding/frontend/app.js`，将第一行改为：
-
-```javascript
-const API_BASE = 'https://crowdfund.example.com/api';
-```
-
-如果使用 IP 访问（无域名）：
-
-```javascript
-const API_BASE = 'http://YOUR_SERVER_IP/api';
-```
-
-> 对应 Nginx 配置中 `location /api/` 的反向代理路径。
+前端默认使用同源 API 路径，不需要修改 `frontend/app.js`。确保 Nginx 已将 `/config`、`/campaigns`、`/healthz` 和 `/api/` 代理到 API 服务。
 
 ---
 
@@ -342,7 +349,7 @@ sudo ufw enable
 
 ### 安全建议
 
-- 禁用 MySQL 远程访问（Docker 默认只映射到 localhost）
+- 禁用 MySQL 远程访问（当前 `docker-compose.yml` 默认不暴露 MySQL 端口）
 - 使用非 root 用户运行服务
 - 定期更新系统和 Docker 镜像
 - 不要将 `.env` 和 `chain.sepolia.json` 提交到 Git
@@ -415,7 +422,7 @@ crontab -e
 │   └── Dockerfile                         ← 后端构建
 ├── frontend/
 │   ├── index.html
-│   └── app.js                             ← 注意修改 API_BASE
+│   └── app.js                             ← 默认使用同源 API
 └── /etc/nginx/sites-available/crowdfunding ← Nginx 配置
 ```
 
@@ -449,7 +456,7 @@ docker compose logs indexer
 
 - 检查 Nginx 是否运行：`sudo systemctl status nginx`
 - 检查 API 容器是否运行：`docker compose ps`
-- 检查 `app.js` 中 `API_BASE` 是否匹配 Nginx 反代路径
+- 检查 Nginx 是否代理了 `/config`、`/campaigns`、`/healthz` 和 `/api/`
 - 浏览器 F12 查看 Console/Network 错误
 
 ### 交易成功但数据不更新

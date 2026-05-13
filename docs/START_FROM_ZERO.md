@@ -280,7 +280,7 @@ cd frontend
 python -m http.server 3000
 ```
 
-> 前端的 `app.js` 中硬编码了 `API_BASE = 'http://localhost:8080'`，如果 API 不是运行在 8080 端口，需要修改该值。
+> 前端默认使用同源 API 路径，最适合通过 Docker Compose 的 nginx 前端容器访问。若使用 `npx serve frontend` 单独启动静态服务，可在浏览器控制台执行 `localStorage.setItem('CROWDFUND_API_BASE', 'http://127.0.0.1:8080')` 后刷新页面。
 
 ### 6.1 页面操作流程
 
@@ -325,7 +325,7 @@ python -m http.server 3000
 docker compose up frontend -d
 ```
 
-此模式下前端由 nginx 伺服，且自动反向代理 API 请求，无需在 `app.js` 中修改 `API_BASE`。
+此模式下前端由 nginx 伺服，且自动反向代理 API 请求，`app.js` 默认同源 API 路径即可工作。
 
 ---
 

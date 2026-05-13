@@ -6,8 +6,6 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-crowdfunding}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-crowdfunding}
-    ports:
-      - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./backend/migrations:/docker-entrypoint-initdb.d:ro
@@ -44,7 +42,7 @@ services:
     volumes:
       - ${CHAIN_CONFIG_HOST_PATH:-./backend/config/chain.testnet.example.json}:/app/config/chain.json:ro
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "${API_PORT:-127.0.0.1:8080}:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
       interval: 30s

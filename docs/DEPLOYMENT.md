@@ -47,7 +47,6 @@ CHAIN_CONFIG_HOST_PATH=./backend/config/chain.testnet.example.json
 
 - `MYSQL_ROOT_PASSWORD`
 - `MYSQL_DATABASE`
-- `MYSQL_PORT`
 - `API_PORT`
 - `FRONTEND_PORT`（新增，nginx 前端容器端口，默认 3000）
 - `DATABASE_URL`
@@ -64,6 +63,8 @@ CHAIN_CONFIG_HOST_PATH=./backend/config/chain.testnet.example.json
 cp .env.example .env
 docker compose up -d --build
 ```
+
+生产环境建议保持 `API_PORT=127.0.0.1:8080`，API 只给本机反向代理访问；对公网只暴露前端/网关入口。
 
 ## 发布顺序
 
@@ -85,8 +86,8 @@ docker compose up -d --build
 - `CORS_ALLOWED_ORIGINS` 指向生产域名（而不是 `*`）
 - API 容器可以连通 RPC
 - Indexer 能够推进 checkpoint
-- MySQL 只对内网开放
-- 敏感变量不写死在前端代码里
+- MySQL 不通过 compose `ports` 暴露到公网，只允许容器网络或内网访问
+- 前端使用同源 API 路径或受控运行时配置，不把生产 API 地址硬编码进代码
 - API 容器以非 root 用户运行
 - 容器 HEALTHCHECK 正常通过
 
